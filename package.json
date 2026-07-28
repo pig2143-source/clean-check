@@ -1,6 +1,6 @@
 {
-  "name": "clean-check-complete",
-  "version": "4.0.0",
+  "name": "dp-clean-enterprise",
+  "version": "5.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",

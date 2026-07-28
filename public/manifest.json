@@ -1,10 +1,10 @@
 {
-  "name": "潔淨打卡 Clean Check",
-  "short_name": "潔淨打卡",
-  "description": "每日清潔拍照與主管審核",
+  "name": "DP Clean｜大埔鐵板燒 屏東民生店",
+  "short_name": "DP Clean",
+  "description": "清潔拍照、主管審核與即時報表",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f8f5",
-  "theme_color": "#117a43",
-  "icons": []
+  "background_color": "#0b382a",
+  "theme_color": "#0b382a",
+  "icons": [{"src":"/dp-clean-logo.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
 }
