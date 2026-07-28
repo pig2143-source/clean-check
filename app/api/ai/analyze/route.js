@@ -40,41 +40,78 @@ const schema={
   required:['score','verdict','oil_stain','water_stain','trash','summary','suggestions','image_quality']
 }
 
+function outputText(raw){
+  if(typeof raw?.output_text==='string'&&raw.output_text.trim()) return raw.output_text
+  for(const item of raw?.output||[]){
+    for(const part of item?.content||[]){
+      if(part?.type==='output_text'&&typeof part.text==='string') return part.text
+    }
+  }
+  return ''
+}
+
+function validateResult(result){
+  if(!result||typeof result!=='object') throw new Error('AI 回傳格式不正確。')
+  if(!Number.isInteger(result.score)||result.score<0||result.score>100) throw new Error('AI 評分格式不正確。')
+  if(!['pass','review','fail'].includes(result.verdict)) throw new Error('AI 判定格式不正確。')
+  return result
+}
+
+export async function GET(){
+  return NextResponse.json({ok:true,service:'DP Clean AI analysis',model:process.env.OPENAI_VISION_MODEL||'gpt-4.1-mini',configured:Boolean(process.env.OPENAI_API_KEY)})
+}
+
 export async function POST(request){
+  let submissionId=''
+  let admin=null
   try{
-    const gate=await requireUser(request);if(gate.error)return gate.error
+    const gate=await requireUser(request)
+    if(gate.error)return gate.error
+    admin=gate.admin
     if(!process.env.OPENAI_API_KEY) return NextResponse.json({error:'尚未設定 OPENAI_API_KEY。'},{status:503})
-    const {submissionId}=await request.json()
+
+    const body=await request.json().catch(()=>null)
+    submissionId=body?.submissionId||''
     if(!submissionId) return NextResponse.json({error:'缺少 submissionId。'},{status:400})
 
-    const {data:submission,error:subError}=await gate.admin.from('cleaning_submissions')
+    const {data:submission,error:subError}=await admin.from('cleaning_submissions')
       .select('id,staff_id,photo_path,cleaning_tasks(name,area,photo_angles,instructions)')
       .eq('id',submissionId).single()
     if(subError||!submission) return NextResponse.json({error:'找不到照片紀錄。'},{status:404})
     if(submission.staff_id!==gate.user.id&&gate.profile?.role!=='manager') return NextResponse.json({error:'沒有權限分析此照片。'},{status:403})
+    if(!submission.photo_path) return NextResponse.json({error:'此紀錄沒有照片。'},{status:400})
 
-    await gate.admin.from('cleaning_submissions').update({ai_status:'analyzing',ai_error:null}).eq('id',submissionId)
-    const {data:signed,error:signedError}=await gate.admin.storage.from('cleaning-photos').createSignedUrl(submission.photo_path,600)
+    const started=Date.now()
+    const {error:pendingError}=await admin.from('cleaning_submissions').update({ai_status:'analyzing',ai_error:null}).eq('id',submissionId)
+    if(pendingError) throw pendingError
+
+    const {data:signed,error:signedError}=await admin.storage.from('cleaning-photos').createSignedUrl(submission.photo_path,600)
     if(signedError||!signed?.signedUrl) throw new Error('無法讀取清潔照片。')
 
     const task=submission.cleaning_tasks||{}
-    const prompt=`你是餐飲業清潔稽核助理。請只根據照片中可見內容分析，不可假裝看見被遮擋或照片外的區域。\n清潔項目：${task.name||'未提供'}\n區域：${task.area||'未提供'}\n建議角度：${task.photo_angles||'未提供'}\nSOP：${task.instructions||'未提供'}\n評估油污、水漬、垃圾/雜物，並給 0-100 分。照片模糊、過暗、角度不完整時降低 image_quality 並將 verdict 設為 review。severity：0無、1輕微、2明顯、3嚴重。AI 只能輔助主管，不可把不確定內容判定為確定缺失。請使用繁體中文摘要與建議。`
+    const prompt=`你是餐飲業清潔稽核助理。只根據照片可見內容判斷，不推測被遮擋或畫面外區域。\n清潔項目：${task.name||'未提供'}\n區域：${task.area||'未提供'}\n建議角度：${task.photo_angles||'未提供'}\nSOP：${task.instructions||'未提供'}\n請評估油污、水漬、垃圾或雜物，並給 0 到 100 分。照片模糊、過暗或角度不完整時，image_quality 應降低且 verdict 設為 review。severity：0 無、1 輕微、2 明顯、3 嚴重。AI 僅供主管參考，不確定時不可判定為確定缺失。摘要與建議使用繁體中文。`
 
-    const response=await fetch('https://api.openai.com/v1/responses',{
-      method:'POST',
-      headers:{'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:process.env.OPENAI_VISION_MODEL||'gpt-4.1-mini',
-        input:[{role:'user',content:[{type:'input_text',text:prompt},{type:'input_image',image_url:signed.signedUrl,detail:'high'}]}],
-        text:{format:{type:'json_schema',name:'cleanliness_analysis',strict:true,schema}},
-        max_output_tokens:900
+    const controller=new AbortController()
+    const timer=setTimeout(()=>controller.abort(),50000)
+    let response
+    try{
+      response=await fetch('https://api.openai.com/v1/responses',{
+        method:'POST',signal:controller.signal,
+        headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
+        body:JSON.stringify({
+          model:process.env.OPENAI_VISION_MODEL||'gpt-4.1-mini',
+          input:[{role:'user',content:[{type:'input_text',text:prompt},{type:'input_image',image_url:signed.signedUrl,detail:'high'}]}],
+          text:{format:{type:'json_schema',name:'cleanliness_analysis',strict:true,schema}},
+          max_output_tokens:900
+        })
       })
-    })
-    const raw=await response.json()
-    if(!response.ok) throw new Error(raw?.error?.message||'AI 分析服務暫時無法使用。')
-    const outputText=raw.output_text||raw.output?.flatMap(x=>x.content||[]).find(x=>x.type==='output_text')?.text
-    if(!outputText) throw new Error('AI 沒有回傳分析結果。')
-    const result=JSON.parse(outputText)
+    }finally{clearTimeout(timer)}
+
+    const raw=await response.json().catch(()=>({}))
+    if(!response.ok) throw new Error(raw?.error?.message||`AI 分析服務錯誤（${response.status}）。`)
+    const text=outputText(raw)
+    if(!text) throw new Error('AI 沒有回傳分析結果。')
+    const result=validateResult(JSON.parse(text))
 
     const update={
       ai_status:'completed',ai_score:result.score,ai_verdict:result.verdict,
@@ -82,13 +119,14 @@ export async function POST(request){
       ai_summary:result.summary,ai_suggestions:result.suggestions,ai_image_quality:result.image_quality,
       ai_model:process.env.OPENAI_VISION_MODEL||'gpt-4.1-mini',ai_analyzed_at:new Date().toISOString(),ai_error:null
     }
-    const {error:updateError}=await gate.admin.from('cleaning_submissions').update(update).eq('id',submissionId)
+    const {error:updateError}=await admin.from('cleaning_submissions').update(update).eq('id',submissionId)
     if(updateError) throw updateError
-    return NextResponse.json({ok:true,analysis:result})
+    return NextResponse.json({ok:true,analysis:result,duration_ms:Date.now()-started})
   }catch(e){
-    try{
-      const body=await request.clone().json();if(body?.submissionId){const {admin}=clients();await admin.from('cleaning_submissions').update({ai_status:'failed',ai_error:e.message||'AI 分析失敗'}).eq('id',body.submissionId)}
-    }catch{}
-    return NextResponse.json({error:e.message||'AI 分析失敗。'},{status:500})
+    if(admin&&submissionId){
+      await admin.from('cleaning_submissions').update({ai_status:'failed',ai_error:e?.name==='AbortError'?'AI 分析逾時，請稍後重試。':(e.message||'AI 分析失敗')}).eq('id',submissionId)
+    }
+    const message=e?.name==='AbortError'?'AI 分析逾時，請稍後重試。':(e.message||'AI 分析失敗。')
+    return NextResponse.json({error:message},{status:500})
   }
 }
