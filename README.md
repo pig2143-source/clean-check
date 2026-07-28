@@ -1,35 +1,25 @@
-# 潔淨打卡 Clean Check v2
+# 潔淨打卡 Clean Check v3
 
-這是可直接覆蓋既有 GitHub 專案的完整版。
+本版包含：
 
-## 已完成
+1. 主管後台
+2. 員工帳號管理：新增、編輯、角色、停用、啟用、重設密碼、刪除
+3. 清潔項目管理：新增、編輯、啟用、停用、排序、刪除
 
-- 員工與主管登入
-- 主管也能執行今日清潔任務
-- 點擊任務後直接拍照或選擇照片
-- 照片上傳至 Supabase Storage
-- 主管查看照片、審核合格或輸入退回原因
-- 退回後重新拍照送審
-- 今日完成率與狀態統計
-- 歷史紀錄搜尋、篩選、照片預覽
-- 主管新增、編輯、啟用、停用及刪除清潔項目
-- 帳號名單
-- PWA 手機桌面安裝
-
-## 更新既有專案
-
-1. 在 Supabase SQL Editor 新增查詢。
-2. 貼上並執行 `supabase/upgrade-v2.sql`。
-3. GitHub 專案根目錄選 Add file → Upload files。
-4. 上傳本資料夾內全部檔案，覆蓋同名檔案。
-5. Commit changes。
-6. Vercel 會自動重新部署。
-
-現有的 Vercel 環境變數不需要更改：
+## Vercel 環境變數
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
-## 安全提醒
+`SUPABASE_SERVICE_ROLE_KEY` 僅可放在 Vercel，不可放入 GitHub，也不可加上 `NEXT_PUBLIC_`。
 
-前端只可使用 `sb_publishable_...`。不要把 `sb_secret_...` 放進 GitHub 或 `NEXT_PUBLIC_` 變數。
+## Supabase
+
+在 SQL Editor 執行：
+
+`supabase/upgrade-v3.sql`
+
+## 部署
+
+將本資料夾內所有檔案覆蓋上傳到 GitHub。Vercel 會自動重新部署。主管登入後，底部點「管理」，即可切換「員工管理」與「清潔項目」。
