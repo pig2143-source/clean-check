@@ -1,0 +1,10 @@
+{
+  "name": "潔淨打卡",
+  "short_name": "潔淨打卡",
+  "description": "每日清潔拍照與主管審核",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f7f4",
+  "theme_color": "#138a4b",
+  "icons": []
+}
