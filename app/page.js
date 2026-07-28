@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { BarChart3, CalendarDays, Camera, CheckCircle2, ChevronRight, ClipboardCheck, Download, History, Home, Image as ImageIcon, KeyRound, ListChecks, LogOut, Pencil, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Store, Trash2, Trophy, UserRound, UserX, Users, X, XCircle } from 'lucide-react'
+import { AlertTriangle, BarChart3, CalendarDays, Camera, CheckCircle2, ChevronRight, ClipboardCheck, Clock3, Download, History, Home, Image as ImageIcon, KeyRound, ListChecks, LogOut, Pencil, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Store, Trash2, TrendingUp, Trophy, UserRound, UserX, Users, X, XCircle } from 'lucide-react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
 const today = () => new Date().toLocaleDateString('en-CA')
@@ -115,7 +115,7 @@ export default function App(){
       <Header user={profile} onLogout={logout}/>
       <main className="content">
         {notice&&<div className={`notice ${noticeType==='error'?'errorNotice':'successNotice'}`}>{notice}</div>}
-        {page==='home'&&<Dashboard rows={taskRows} profile={profile} mode={mode} setMode={setMode} openTask={t=>{setSelected(t);setPage('task')}} review={review} signedUrl={signedUrl}/>} 
+        {page==='home'&&<Dashboard rows={taskRows} profile={profile} profiles={profiles} submissions={submissions} mode={mode} setMode={setMode} openTask={t=>{setSelected(t);setPage('task')}} review={review} signedUrl={signedUrl}/>} 
         {page==='history'&&<HistoryPage submissions={submissions} signedUrl={signedUrl}/>} 
         {page==='manage'&&canManage&&<ManagePage tasks={tasks} profiles={profiles} saveTask={saveTask} deleteTask={deleteTask} currentUserId={session.user.id} flash={flash}/>} 
         {page==='reports'&&canManage&&<ReportsPage submissions={submissions} tasks={tasks} profiles={profiles}/>} 
@@ -140,21 +140,69 @@ function Login({notice}){
     <div style={{height:14}}/><label className="label">密碼</label><input className="input brandInput" type="password" required value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="請輸入密碼"/>
     <div className="loginOptions"><label className="remember"><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/>記住帳號</label><button type="button" className="textButton" onClick={resetPassword} disabled={resetBusy}>{resetBusy?'寄送中…':'忘記密碼'}</button></div>
     <button className="button goldButton" style={{width:'100%'}} disabled={busy}>{busy?'登入中…':'登入 DP Clean'}</button>
-    <div className="loginFooter">DP Clean Enterprise <b>v5.0</b></div>
+    <div className="loginFooter">DP Clean Enterprise <b>v5.4</b></div>
   </form></div>
 }
 function SetupNeeded({message}){return <div className="login"><div className="loginbox card"><div className="logo">🔌</div><h2>尚未完成 Supabase 設定</h2><p className="muted">請確認 Vercel 環境變數與 Supabase profiles 設定。</p>{message&&<div className="notice errorNotice">{message}</div>}</div></div>}
 function Loading(){return <div className="login"><div className="loginbox card"><h2>載入中…</h2></div></div>}
 function Header({user,onLogout}){return <header className="header brandHeader"><div className="row space"><div className="row"><BrandMark compact/><div><div className="headerBrand">DP Clean · 屏東民生店</div><h2 style={{margin:'3px 0'}}>你好，{user.display_name}</h2><div style={{fontSize:13,opacity:.88}}>{user.role==='manager'?'主管模式':'員工模式'} · {new Date().toLocaleDateString('zh-TW')}</div></div></div><button className="topback" onClick={onLogout} aria-label="登出"><LogOut size={20}/></button></div></header>}
 
-function Dashboard({rows,profile,mode,setMode,openTask,review,signedUrl}){
+function Dashboard({rows,profile,profiles,submissions,mode,setMode,openTask,review,signedUrl}){
   const approved=rows.filter(r=>r.submission?.status==='approved').length
   const reviewing=rows.filter(r=>r.submission?.status==='review').length
   const redo=rows.filter(r=>r.submission?.status==='redo').length
+  const pending=rows.filter(r=>!r.submission).length
+  const completionRate=rows.length?Math.round(approved/rows.length*100):0
+  const now=new Date()
+  const minutesNow=now.getHours()*60+now.getMinutes()
+  const overdueRows=rows.filter(r=>{
+    if(r.submission?.status==='approved'||!r.deadline_time) return false
+    const [h,m]=String(r.deadline_time).split(':').map(Number)
+    return Number.isFinite(h)&&Number.isFinite(m)&&(h*60+m)<minutesNow
+  })
+  const todaySubs=submissions.filter(s=>s.work_date===today())
+  const staffStats=profiles.filter(p=>p.role==='staff').map(p=>{
+    const assigned=rows.filter(r=>r.assigned_staff_id===p.id || (!r.assigned_staff_id && ['staff','all'].includes(r.assigned_role||'staff')))
+    const own=todaySubs.filter(s=>s.staff_id===p.id)
+    const ownApproved=own.filter(s=>s.status==='approved').length
+    return {id:p.id,name:p.display_name||'未命名',total:assigned.length,approved:ownApproved,review:own.filter(s=>s.status==='review').length,redo:own.filter(s=>s.status==='redo').length,rate:assigned.length?Math.min(100,Math.round(ownApproved/assigned.length*100)):0}
+  }).sort((a,b)=>b.rate-a.rate||b.approved-a.approved)
+  const sevenDays=useMemo(()=>{
+    const days=[]
+    for(let i=6;i>=0;i--){
+      const d=new Date();d.setDate(d.getDate()-i)
+      const key=d.toLocaleDateString('en-CA')
+      const own=submissions.filter(s=>s.work_date===key)
+      const ok=own.filter(s=>s.status==='approved').length
+      days.push({key,label:d.toLocaleDateString('zh-TW',{weekday:'short'}),rate:own.length?Math.round(ok/own.length*100):0,total:own.length})
+    }
+    return days
+  },[submissions])
+  const exceptionRows=[...rows.filter(r=>r.submission?.status==='redo'),...overdueRows.filter(r=>r.submission?.status!=='redo')].slice(0,5)
   return <>
-    <div className="grid3"><div className="stat"><span className="muted">已合格</span><b>{approved}</b></div><div className="stat"><span className="muted">待審核</span><b>{reviewing}</b></div><div className="stat"><span className="muted">需重做</span><b>{redo}</b></div></div>
-    <div className="card" style={{marginTop:12}}><div className="row space"><div><div className="muted">今日完成率</div><h2 style={{margin:'4px 0'}}>{approved} / {rows.length} 項</h2></div><Sparkles color="#138a4b"/></div><div className="progress"><div style={{width:`${rows.length?approved/rows.length*100:0}%`}}/></div></div>
-    {profile.role==='manager'&&<div className="tabs"><button className={mode==='tasks'?'on':''} onClick={()=>setMode('tasks')}>今日任務</button><button className={mode==='review'?'on':''} onClick={()=>setMode('review')}>主管審核 {reviewing?`(${reviewing})`:''}</button></div>}
+    <div className="dashboardIntro"><div><div className="eyebrow">今日營運總覽</div><h2>全店清潔進度</h2><p>關鍵狀況集中在這一頁，少翻頁、多掌握。</p></div><div className={`scoreRing ${completionRate===100?'complete':''}`} style={{'--score':`${completionRate}%`}}><strong>{completionRate}%</strong><span>完成率</span></div></div>
+
+    <div className="kpiGrid">
+      <div className="kpiCard kpiGood"><CheckCircle2/><span>已合格</span><b>{approved}</b></div>
+      <div className="kpiCard kpiReview"><Clock3/><span>待審核</span><b>{reviewing}</b></div>
+      <div className="kpiCard kpiWarn"><AlertTriangle/><span>逾期</span><b>{overdueRows.length}</b></div>
+      <div className="kpiCard kpiPlain"><ListChecks/><span>未完成</span><b>{pending+redo}</b></div>
+    </div>
+
+    <div className="card dashboardProgress"><div className="row space"><div><div className="muted">今日總任務</div><h2>{approved} / {rows.length} 項完成</h2></div><Sparkles color="#b68b2f"/></div><div className="progress progressLarge"><div style={{width:`${completionRate}%`}}/></div><div className="progressMeta"><span>待完成 {pending}</span><span>待審核 {reviewing}</span><span>需重做 {redo}</span></div></div>
+
+    {profile.role==='manager'&&<>
+      <div className="sectionTitle"><h3><AlertTriangle size={19}/>今日異常</h3><span className="muted">{exceptionRows.length} 項需留意</span></div>
+      <div className="card exceptionList">{exceptionRows.length===0?<div className="empty compactEmpty"><CheckCircle2 size={30}/><p>目前沒有逾期或退回項目。</p></div>:exceptionRows.map(t=><button key={t.id} className="exceptionRow" onClick={()=>openTask(t)}><div className={t.submission?.status==='redo'?'exceptionIcon red':'exceptionIcon amber'}>{t.submission?.status==='redo'?<XCircle size={19}/>:<Clock3 size={19}/>}</div><div><b>{t.name}</b><div className="muted">{t.area} · {t.submission?.status==='redo'?'需重新清潔':`期限 ${String(t.deadline_time).slice(0,5)}`}</div></div><ChevronRight size={17}/></button>)}</div>
+
+      <div className="sectionTitle"><h3><TrendingUp size={19}/>近 7 日完成率</h3></div>
+      <div className="card weekChart">{sevenDays.map(d=><div className="weekCol" key={d.key}><div className="weekValue">{d.total?`${d.rate}%`:'-'}</div><div className="weekTrack"><div style={{height:`${d.total?Math.max(8,d.rate):4}%`}}/></div><span>{d.label}</span></div>)}</div>
+
+      <div className="sectionTitle"><h3><Users size={19}/>員工今日進度</h3></div>
+      <div className="card staffBoard">{staffStats.length===0?<div className="empty">尚未建立員工帳號。</div>:staffStats.map((u,i)=><div className="staffRow" key={u.id}><div className="staffAvatar">{u.name.slice(0,1)}</div><div className="staffInfo"><div className="row space"><b>{u.name}</b><strong>{u.rate}%</strong></div><div className="miniProgress"><div style={{width:`${u.rate}%`}}/></div><div className="muted tiny">合格 {u.approved} · 待審 {u.review} · 重做 {u.redo}</div></div>{i===0&&u.approved>0?<Trophy size={20} className="goldIcon"/>:<span className="rankNo">{i+1}</span>}</div>)}</div>
+    </>}
+
+    {profile.role==='manager'&&<div className="tabs dashboardTabs"><button className={mode==='tasks'?'on':''} onClick={()=>setMode('tasks')}>今日任務</button><button className={mode==='review'?'on':''} onClick={()=>setMode('review')}>主管審核 {reviewing?`(${reviewing})`:''}</button></div>}
     {mode==='review'&&profile.role==='manager'?<ReviewList rows={rows.filter(r=>r.submission?.status==='review')} review={review} signedUrl={signedUrl}/>:<TaskList rows={rows} openTask={openTask}/>} 
   </>
 }
@@ -238,6 +286,6 @@ function ReportsPage({submissions,tasks,profiles}){
   </>
 }
 
-function SettingsPage({user,reload,loading}){return <><h2>設定</h2><div className="card"><div className="task"><div className="iconbox"><Store/></div><div><b>門市資料</b><div className="muted">大埔鐵板燒 屏東民生店 · DP Clean v5</div></div></div><div className="task"><div className="iconbox"><UserRound/></div><div><b>目前帳號</b><div className="muted">{user.display_name} · {user.role==='manager'?'主管':'員工'}</div></div></div><div className="task"><div className="iconbox"><Settings/></div><div style={{flex:1}}><b>雲端同步</b><div className="muted">Supabase 已連線</div></div><button className="button ghost" disabled={loading} onClick={reload}><RefreshCw size={16}/>同步</button></div></div><div className="card soft"><b>安裝到手機桌面</b><p className="muted">iPhone：Safari 分享 → 加入主畫面。Android：Chrome 選單 → 安裝應用程式。</p></div></>}
+function SettingsPage({user,reload,loading}){return <><h2>設定</h2><div className="card"><div className="task"><div className="iconbox"><Store/></div><div><b>門市資料</b><div className="muted">大埔鐵板燒 屏東民生店 · DP Clean v5.4</div></div></div><div className="task"><div className="iconbox"><UserRound/></div><div><b>目前帳號</b><div className="muted">{user.display_name} · {user.role==='manager'?'主管':'員工'}</div></div></div><div className="task"><div className="iconbox"><Settings/></div><div style={{flex:1}}><b>雲端同步</b><div className="muted">Supabase 已連線</div></div><button className="button ghost" disabled={loading} onClick={reload}><RefreshCw size={16}/>同步</button></div></div><div className="card soft"><b>安裝到手機桌面</b><p className="muted">iPhone：Safari 分享 → 加入主畫面。Android：Chrome 選單 → 安裝應用程式。</p></div></>}
 function Status({status}){const map={approved:['合格','done'],review:['待審核','pending'],pending:['待完成','pending'],redo:['需重做','redo']};const [t,c]=map[status]||map.pending;return <span className={`badge ${c}`}>{t}</span>}
 function Nav({page,setPage,manager}){const items=manager?[[Home,'home','首頁'],[History,'history','紀錄'],[BarChart3,'reports','報表'],[Users,'manage','管理'],[Settings,'settings','設定']]:[[Home,'home','首頁'],[History,'history','紀錄'],[ListChecks,'home','任務'],[Settings,'settings','設定']];return <nav className="nav">{items.map(([Icon,value,label],i)=><button key={`${value}-${i}`} className={page===value?'active':''} onClick={()=>setPage(value)}><Icon size={20}/><div>{label}</div></button>)}</nav>}
