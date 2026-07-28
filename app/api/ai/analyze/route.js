@@ -3,11 +3,19 @@ import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
+export const dynamic = 'force-dynamic'
+
+function readServerEnv(){
+  const apiKey=(process.env.OPENAI_API_KEY||'').trim()
+  const model=(process.env.OPENAI_VISION_MODEL||'gpt-4.1-mini').trim()
+  const supabaseUrl=(process.env.NEXT_PUBLIC_SUPABASE_URL||'').trim()
+  const supabasePublicKey=(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||'').trim()
+  const supabaseServiceKey=(process.env.SUPABASE_SERVICE_ROLE_KEY||'').trim()
+  return {apiKey,model,supabaseUrl,supabasePublicKey,supabaseServiceKey}
+}
 
 function clients(){
-  const url=process.env.NEXT_PUBLIC_SUPABASE_URL
-  const publicKey=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-  const serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY
+  const {supabaseUrl:url,supabasePublicKey:publicKey,supabaseServiceKey:serviceKey}=readServerEnv()
   if(!url||!publicKey||!serviceKey) throw new Error('Supabase 伺服器環境變數尚未設定完整。')
   return {
     auth:createClient(url,publicKey,{auth:{persistSession:false,autoRefreshToken:false}}),
@@ -58,7 +66,31 @@ function validateResult(result){
 }
 
 export async function GET(){
-  return NextResponse.json({ok:true,service:'DP Clean AI analysis',model:process.env.OPENAI_VISION_MODEL||'gpt-4.1-mini',configured:Boolean(process.env.OPENAI_API_KEY)})
+  const env=readServerEnv()
+  const openAIEnvNames=Object.keys(process.env).filter(name=>name.toUpperCase().includes('OPENAI')).sort()
+  return NextResponse.json({
+    ok:true,
+    service:'DP Clean AI analysis',
+    configured:Boolean(env.apiKey),
+    model:env.model,
+    runtime:'nodejs',
+    deployment:{
+      vercelEnv:process.env.VERCEL_ENV||null,
+      vercelRegion:process.env.VERCEL_REGION||null,
+      commitSha:process.env.VERCEL_GIT_COMMIT_SHA?.slice(0,8)||null
+    },
+    env:{
+      OPENAI_API_KEY:Boolean(env.apiKey),
+      OPENAI_VISION_MODEL:Boolean((process.env.OPENAI_VISION_MODEL||'').trim()),
+      NEXT_PUBLIC_SUPABASE_URL:Boolean(env.supabaseUrl),
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:Boolean(env.supabasePublicKey),
+      SUPABASE_SERVICE_ROLE_KEY:Boolean(env.supabaseServiceKey)
+    },
+    detectedOpenAIEnvNames:openAIEnvNames,
+    note:env.apiKey
+      ? '伺服器已讀取 OPENAI_API_KEY。'
+      : '伺服器未讀取 OPENAI_API_KEY。請重新建立 Production 環境變數，再以最新 main commit 建立新部署。'
+  },{headers:{'Cache-Control':'no-store, max-age=0'}})
 }
 
 export async function POST(request){
@@ -68,7 +100,12 @@ export async function POST(request){
     const gate=await requireUser(request)
     if(gate.error)return gate.error
     admin=gate.admin
-    if(!process.env.OPENAI_API_KEY) return NextResponse.json({error:'尚未設定 OPENAI_API_KEY。'},{status:503})
+    const env=readServerEnv()
+    if(!env.apiKey) return NextResponse.json({
+      error:'伺服器未讀取 OPENAI_API_KEY。',
+      code:'OPENAI_API_KEY_MISSING',
+      diagnostics:{vercelEnv:process.env.VERCEL_ENV||null,detectedOpenAIEnvNames:Object.keys(process.env).filter(name=>name.toUpperCase().includes('OPENAI')).sort()}
+    },{status:503,headers:{'Cache-Control':'no-store'}})
 
     const body=await request.json().catch(()=>null)
     submissionId=body?.submissionId||''
@@ -97,9 +134,9 @@ export async function POST(request){
     try{
       response=await fetch('https://api.openai.com/v1/responses',{
         method:'POST',signal:controller.signal,
-        headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
+        headers:{Authorization:`Bearer ${env.apiKey}`,'Content-Type':'application/json'},
         body:JSON.stringify({
-          model:process.env.OPENAI_VISION_MODEL||'gpt-4.1-mini',
+          model:env.model,
           input:[{role:'user',content:[{type:'input_text',text:prompt},{type:'input_image',image_url:signed.signedUrl,detail:'high'}]}],
           text:{format:{type:'json_schema',name:'cleanliness_analysis',strict:true,schema}},
           max_output_tokens:900
@@ -117,7 +154,7 @@ export async function POST(request){
       ai_status:'completed',ai_score:result.score,ai_verdict:result.verdict,
       ai_oil_stain:result.oil_stain,ai_water_stain:result.water_stain,ai_trash:result.trash,
       ai_summary:result.summary,ai_suggestions:result.suggestions,ai_image_quality:result.image_quality,
-      ai_model:process.env.OPENAI_VISION_MODEL||'gpt-4.1-mini',ai_analyzed_at:new Date().toISOString(),ai_error:null
+      ai_model:env.model,ai_analyzed_at:new Date().toISOString(),ai_error:null
     }
     const {error:updateError}=await admin.from('cleaning_submissions').update(update).eq('id',submissionId)
     if(updateError) throw updateError
