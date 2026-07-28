@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Camera, CheckCircle2, ChevronRight, ClipboardCheck, History, Home, Image as ImageIcon, KeyRound, ListChecks, LogOut, Pencil, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Store, Trash2, UserRound, UserX, Users, X, XCircle } from 'lucide-react'
+import { BarChart3, CalendarDays, Camera, CheckCircle2, ChevronRight, ClipboardCheck, Download, History, Home, Image as ImageIcon, KeyRound, ListChecks, LogOut, Pencil, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Store, Trash2, Trophy, UserRound, UserX, Users, X, XCircle } from 'lucide-react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
 const today = () => new Date().toLocaleDateString('en-CA')
@@ -118,6 +118,7 @@ export default function App(){
         {page==='home'&&<Dashboard rows={taskRows} profile={profile} mode={mode} setMode={setMode} openTask={t=>{setSelected(t);setPage('task')}} review={review} signedUrl={signedUrl}/>} 
         {page==='history'&&<HistoryPage submissions={submissions} signedUrl={signedUrl}/>} 
         {page==='manage'&&canManage&&<ManagePage tasks={tasks} saveTask={saveTask} deleteTask={deleteTask} currentUserId={session.user.id} flash={flash}/>} 
+        {page==='reports'&&canManage&&<ReportsPage submissions={submissions} tasks={tasks} profiles={profiles}/>} 
         {page==='settings'&&<SettingsPage user={profile} reload={loadData} loading={loading}/>} 
       </main>
       <Nav page={page} setPage={setPage} manager={canManage}/>
@@ -184,6 +185,48 @@ function EmployeeForm({user,close,save,busy}){const [v,setV]=useState({display_n
 function PasswordForm({user,close,save,busy}){const [password,setPassword]=useState('');return <div className="modal" onClick={close}><form className="sheet" onClick={e=>e.stopPropagation()} onSubmit={e=>{e.preventDefault();save(user,password)}}><div className="row space"><div><h2 style={{margin:0}}>重設密碼</h2><div className="muted">{user.display_name} · {user.email}</div></div><button type="button" className="button ghost compact" onClick={close}><X size={18}/></button></div><div className="divider"/><label className="label">新密碼（至少 8 碼）</label><input className="input" type="password" minLength={8} required value={password} onChange={e=>setPassword(e.target.value)}/><button className="button primary" style={{width:'100%',marginTop:18}} disabled={busy}>{busy?'處理中…':'設定新密碼'}</button></form></div>}
 function TaskForm({task,close,save}){const [values,setValues]=useState({name:task?.name||'',area:task?.area||'',schedule_label:task?.schedule_label||'每日',sort_order:task?.sort_order||0,active:task?.active??true});const set=(k,v)=>setValues(x=>({...x,[k]:v}));return <div className="modal" onClick={close}><form className="sheet" onClick={e=>e.stopPropagation()} onSubmit={e=>{e.preventDefault();save(values)}}><div className="row space"><h2 style={{margin:0}}>{task?'編輯清潔項目':'新增清潔項目'}</h2><button type="button" className="button ghost" onClick={close}><X size={18}/></button></div><div className="divider"/><label className="label">項目名稱</label><input className="input" required value={values.name} onChange={e=>set('name',e.target.value)}/><div style={{height:12}}/><label className="label">區域</label><input className="input" required value={values.area} onChange={e=>set('area',e.target.value)} placeholder="廚房、用餐區、廁所…"/><div style={{height:12}}/><label className="label">執行時段</label><input className="input" required value={values.schedule_label} onChange={e=>set('schedule_label',e.target.value)} placeholder="每日、打烊後、每週一…"/><div style={{height:12}}/><label className="label">排序</label><input className="input" type="number" value={values.sort_order} onChange={e=>set('sort_order',e.target.value)}/><div style={{height:12}}/><label className="row"><input type="checkbox" checked={values.active} onChange={e=>set('active',e.target.checked)}/>啟用此項目</label><button className="button primary" style={{width:'100%',marginTop:18}}>儲存</button></form></div>}
 
+
+function ReportsPage({submissions,tasks,profiles}){
+  const [range,setRange]=useState('month')
+  const now=new Date()
+  const start=useMemo(()=>{
+    const d=new Date(now)
+    if(range==='today') d.setHours(0,0,0,0)
+    else if(range==='week'){const day=(d.getDay()+6)%7;d.setDate(d.getDate()-day);d.setHours(0,0,0,0)}
+    else {d.setDate(1);d.setHours(0,0,0,0)}
+    return d
+  },[range])
+  const rows=useMemo(()=>submissions.filter(s=>new Date(`${s.work_date}T00:00:00`)>=start),[submissions,start])
+  const approved=rows.filter(s=>s.status==='approved').length
+  const review=rows.filter(s=>s.status==='review').length
+  const redo=rows.filter(s=>s.status==='redo').length
+  const rate=rows.length?Math.round(approved/rows.length*100):0
+  const staffStats=profiles.map(p=>{const own=rows.filter(s=>s.staff_id===p.id);return {name:p.display_name||'未命名',role:p.role,total:own.length,approved:own.filter(s=>s.status==='approved').length,review:own.filter(s=>s.status==='review').length,redo:own.filter(s=>s.status==='redo').length}}).filter(x=>x.total>0).sort((a,b)=>b.approved-a.approved||b.total-a.total)
+  const taskStats=tasks.map(t=>{const own=rows.filter(s=>s.task_id===t.id);return {name:t.name,total:own.length,approved:own.filter(s=>s.status==='approved').length,redo:own.filter(s=>s.status==='redo').length}}).filter(x=>x.total>0).sort((a,b)=>b.redo-a.redo||b.total-a.total)
+  const dayStats=useMemo(()=>{const map=new Map();for(const s of rows){const v=map.get(s.work_date)||{date:s.work_date,total:0,approved:0};v.total++;if(s.status==='approved')v.approved++;map.set(s.work_date,v)}return [...map.values()].sort((a,b)=>a.date.localeCompare(b.date)).slice(-14)},[rows])
+  function exportCsv(){
+    const head=['日期','清潔項目','區域','員工','狀態','員工備註','主管備註','送出時間','審核時間']
+    const label={approved:'合格',review:'待審核',redo:'需重做'}
+    const body=rows.map(s=>[s.work_date,s.cleaning_tasks?.name||'',s.cleaning_tasks?.area||'',s.profiles?.display_name||'',label[s.status]||s.status,s.note||'',s.manager_note||'',formatDateTime(s.created_at),formatDateTime(s.reviewed_at)])
+    const esc=v=>`"${String(v??'').replaceAll('"','""')}"`
+    const csv='\uFEFF'+[head,...body].map(r=>r.map(esc).join(',')).join('\r\n')
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'})
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`clean-check-${range}-${today()}.csv`;a.click();URL.revokeObjectURL(url)
+  }
+  return <>
+    <div className="row space"><div><h2 style={{marginBottom:2}}>清潔報表</h2><div className="muted">即時統計與 CSV 匯出</div></div><button className="button primary" onClick={exportCsv}><Download size={18}/>匯出 CSV</button></div>
+    <div className="tabs"><button className={range==='today'?'on':''} onClick={()=>setRange('today')}>今日</button><button className={range==='week'?'on':''} onClick={()=>setRange('week')}>本週</button><button className={range==='month'?'on':''} onClick={()=>setRange('month')}>本月</button></div>
+    <div className="grid3"><div className="stat"><span className="muted">合格</span><b>{approved}</b></div><div className="stat"><span className="muted">待審核</span><b>{review}</b></div><div className="stat"><span className="muted">需重做</span><b>{redo}</b></div></div>
+    <div className="card" style={{marginTop:12}}><div className="row space"><div><div className="muted">審核合格率</div><h1 style={{margin:'4px 0'}}>{rate}%</h1></div><BarChart3 size={34}/></div><div className="progress"><div style={{width:`${rate}%`}}/></div><div className="muted" style={{marginTop:8}}>期間內共 {rows.length} 筆打卡紀錄</div></div>
+    <div className="sectionTitle"><h3><CalendarDays size={19}/>每日趨勢</h3></div>
+    <div className="card reportChart">{dayStats.length===0?<div className="empty">期間內尚無資料。</div>:dayStats.map(d=>{const r=d.total?Math.round(d.approved/d.total*100):0;return <div className="chartRow" key={d.date}><span>{new Date(`${d.date}T00:00:00`).toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'})}</span><div className="chartTrack"><div style={{width:`${r}%`}}/></div><b>{r}%</b></div>})}</div>
+    <div className="sectionTitle"><h3><Trophy size={19}/>員工完成排行</h3></div>
+    <div className="card">{staffStats.length===0?<div className="empty">期間內尚無員工紀錄。</div>:staffStats.map((u,i)=><div className="task" key={u.name}><div className="rank">{i+1}</div><div style={{flex:1}}><b>{u.name}</b><div className="muted">合格 {u.approved} · 待審 {u.review} · 重做 {u.redo}</div></div><strong>{u.total} 筆</strong></div>)}</div>
+    <div className="sectionTitle"><h3><ListChecks size={19}/>項目品質分析</h3></div>
+    <div className="card">{taskStats.length===0?<div className="empty">期間內尚無項目紀錄。</div>:taskStats.map(t=><div className="task" key={t.name}><div className="iconbox"><ClipboardCheck size={19}/></div><div style={{flex:1}}><b>{t.name}</b><div className="muted">合格 {t.approved} · 重做 {t.redo}</div></div><strong>{t.total} 次</strong></div>)}</div>
+  </>
+}
+
 function SettingsPage({user,reload,loading}){return <><h2>設定</h2><div className="card"><div className="task"><div className="iconbox"><Store/></div><div><b>門市資料</b><div className="muted">大埔鐵板燒 · 單店模式</div></div></div><div className="task"><div className="iconbox"><UserRound/></div><div><b>目前帳號</b><div className="muted">{user.display_name} · {user.role==='manager'?'主管':'員工'}</div></div></div><div className="task"><div className="iconbox"><Settings/></div><div style={{flex:1}}><b>雲端同步</b><div className="muted">Supabase 已連線</div></div><button className="button ghost" disabled={loading} onClick={reload}><RefreshCw size={16}/>同步</button></div></div><div className="card soft"><b>安裝到手機桌面</b><p className="muted">iPhone：Safari 分享 → 加入主畫面。Android：Chrome 選單 → 安裝應用程式。</p></div></>}
 function Status({status}){const map={approved:['合格','done'],review:['待審核','pending'],pending:['待完成','pending'],redo:['需重做','redo']};const [t,c]=map[status]||map.pending;return <span className={`badge ${c}`}>{t}</span>}
-function Nav({page,setPage,manager}){const items=[[Home,'home','首頁'],[History,'history','紀錄'],manager?[Users,'manage','管理']:[ListChecks,'home','任務'],[Settings,'settings','設定']];return <nav className="nav">{items.map(([Icon,value,label],i)=><button key={`${value}-${i}`} className={page===value?'active':''} onClick={()=>setPage(value)}><Icon size={20}/><div>{label}</div></button>)}</nav>}
+function Nav({page,setPage,manager}){const items=manager?[[Home,'home','首頁'],[History,'history','紀錄'],[BarChart3,'reports','報表'],[Users,'manage','管理'],[Settings,'settings','設定']]:[[Home,'home','首頁'],[History,'history','紀錄'],[ListChecks,'home','任務'],[Settings,'settings','設定']];return <nav className="nav">{items.map(([Icon,value,label],i)=><button key={`${value}-${i}`} className={page===value?'active':''} onClick={()=>setPage(value)}><Icon size={20}/><div>{label}</div></button>)}</nav>}
