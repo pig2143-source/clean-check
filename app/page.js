@@ -140,7 +140,7 @@ function Login({notice}){
     <div style={{height:14}}/><label className="label">密碼</label><input className="input brandInput" type="password" required value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="請輸入密碼"/>
     <div className="loginOptions"><label className="remember"><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/>記住帳號</label><button type="button" className="textButton" onClick={resetPassword} disabled={resetBusy}>{resetBusy?'寄送中…':'忘記密碼'}</button></div>
     <button className="button goldButton" style={{width:'100%'}} disabled={busy}>{busy?'登入中…':'登入 DP Clean'}</button>
-    <div className="loginFooter">DP Clean Enterprise <b>v5.0</b></div>
+    <div className="loginFooter">DP Clean Enterprise <b>v5.1</b></div>
   </form></div>
 }
 function SetupNeeded({message}){return <div className="login"><div className="loginbox card"><div className="logo">🔌</div><h2>尚未完成 Supabase 設定</h2><p className="muted">請確認 Vercel 環境變數與 Supabase profiles 設定。</p>{message&&<div className="notice errorNotice">{message}</div>}</div></div>}
