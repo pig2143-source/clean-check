@@ -105,10 +105,10 @@ export default function App(){
   if(!session) return <Login notice={notice}/>
   if(!profile) return <SetupNeeded message={notice}/>
 
+  const canManage=profile.role==='manager'
   const todaySubs=submissions.filter(s=>s.work_date===today())
   const activeTasks=tasks.filter(t=>t.active && (canManage || t.assigned_staff_id===session.user.id || (!t.assigned_staff_id && ['staff','all'].includes(t.assigned_role||'staff'))))
   const taskRows=activeTasks.map(t=>({...t,submission:todaySubs.find(s=>s.task_id===t.id)}))
-  const canManage=profile.role==='manager'
 
   return <div className="page">
     {page==='task' ? <TaskPage task={selected} submission={selected?.submission} onBack={()=>setPage('home')} onSubmit={submitTask} loading={loading}/> : <>
