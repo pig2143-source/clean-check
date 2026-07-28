@@ -1,86 +1,35 @@
-# 潔淨打卡 Clean Check
+# 潔淨打卡 Clean Check v2
 
-單店每日清潔管理 App，使用 Next.js + Supabase。
+這是可直接覆蓋既有 GitHub 專案的完整版。
 
 ## 已完成
 
-- Email／密碼登入
-- 員工、主管角色
-- 每日清潔清單
-- 手機拍照或相簿上傳
-- 清潔照片存入 Supabase Storage
-- 主管審核：合格／需重做
-- 歷史紀錄
-- 手機版介面與 PWA manifest
+- 員工與主管登入
+- 主管也能執行今日清潔任務
+- 點擊任務後直接拍照或選擇照片
+- 照片上傳至 Supabase Storage
+- 主管查看照片、審核合格或輸入退回原因
+- 退回後重新拍照送審
+- 今日完成率與狀態統計
+- 歷史紀錄搜尋、篩選、照片預覽
+- 主管新增、編輯、啟用、停用及刪除清潔項目
+- 帳號名單
+- PWA 手機桌面安裝
 
-## 1. Supabase
+## 更新既有專案
 
-你目前已建立以下資料表：
+1. 在 Supabase SQL Editor 新增查詢。
+2. 貼上並執行 `supabase/upgrade-v2.sql`。
+3. GitHub 專案根目錄選 Add file → Upload files。
+4. 上傳本資料夾內全部檔案，覆蓋同名檔案。
+5. Commit changes。
+6. Vercel 會自動重新部署。
 
-- `profiles`
-- `cleaning_tasks`
-- `cleaning_submissions`
-
-第一次建立新專案時，可在 Supabase SQL Editor 執行：
-
-`supabase/schema.sql`
-
-已經執行過的人，不要重複執行舊版腳本。
-
-## 2. 環境變數
-
-在 Vercel 專案的 Environment Variables 新增：
+現有的 Vercel 環境變數不需要更改：
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
-連線資訊可從 Supabase 專案上方的 `Connect` 找到。
+## 安全提醒
 
-請勿把 `service_role` 或 secret key 放進前端或 GitHub。
-
-## 3. 上傳 GitHub
-
-把本資料夾內的所有檔案上傳到 GitHub repository 根目錄。上傳後首頁應直接看見：
-
-- `app`
-- `lib`
-- `public`
-- `supabase`
-- `package.json`
-
-不要只上傳 ZIP，也不要多包一層資料夾。
-
-## 4. 部署 Vercel
-
-1. 登入 Vercel
-2. Add New → Project
-3. Import Git Repository → `clean-check`
-4. 加入兩個環境變數
-5. Deploy
-
-## 5. 本機執行
-
-```bash
-npm install
-npm run dev
-```
-
-開啟 `http://localhost:3000`。
-
-## 帳號角色
-
-Authentication 建立使用者後，`profiles` 必須有相同 UUID：
-
-```sql
-insert into public.profiles (id, display_name, role)
-values ('AUTH_USER_UUID', '員工姓名', 'staff');
-```
-
-主管使用：
-
-```sql
-insert into public.profiles (id, display_name, role)
-values ('AUTH_USER_UUID', '店長', 'manager');
-```
-
-`role` 只能是 `staff` 或 `manager`。
+前端只可使用 `sb_publishable_...`。不要把 `sb_secret_...` 放進 GitHub 或 `NEXT_PUBLIC_` 變數。
